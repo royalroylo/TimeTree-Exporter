@@ -96,7 +96,7 @@ def main():
         calendar = select_public_calendar(args.calendar_code)
     else:
         email = resolve_email(args.email)
-        password = resolve_password()
+        password = resolve_password(email)
         calendar = select_calendar(email, password, args.calendar_code)
     exporter = Exporter(
         calendar,

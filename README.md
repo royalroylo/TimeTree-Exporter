@@ -19,6 +19,12 @@ This script works by scraping the TimeTree web app and converting the data to iC
 > It uses unofficial, reverse-engineered TimeTree web APIs, which may change or stop working at any time without notice. As a result, the tool could break unexpectedly.
 > Please use it responsibly—sending too many requests in a short period may lead to rate limiting, temporary blocks, or other restrictions from TimeTree.
 
+> [!Note]
+> **Read-only fork.** This fork enforces read-only access: after login, the HTTP session only sends
+> `GET`/`HEAD` over HTTPS to `timetreeapp.com` hosts and raises `ReadOnlyViolationError` for anything
+> else. The only non-GET request is the login `PUT /api/v1/auth/email/signin`.
+> Install from a reviewed, pinned commit of this fork rather than from PyPI.
+
 ## Installation
 
 > [!Note]
@@ -71,12 +77,25 @@ Then, you can import the ics file to your calendar app.
 
   Note: Public calendar events use TimeTree's public API and may not include labels, alerts, recurrences, or UUIDs.
   Public calendar metadata such as source links, images, and colors is exported with RFC 7986 properties like `SOURCE`, `IMAGE`, and `COLOR` when available. Calendar apps that only implement RFC 5545 may ignore these optional fields.
-- You can pass your email address and password with environment variables. (usually for automation purposes)
+- For automation, provide credentials without putting the password on the command line or in shell history.
+  The password is resolved in this order: `TIMETREE_PASSWORD_FILE`, `TIMETREE_KEYCHAIN_SERVICE`, `TIMETREE_PASSWORD`, interactive prompt.
+
+  macOS Keychain (recommended; `security` prompts for the password, so it never lands in history):
+
+  ```bash
+  security add-generic-password -s timetree-exporter -a email@example.com -w
+  export TIMETREE_EMAIL=email@example.com
+  export TIMETREE_KEYCHAIN_SERVICE=timetree-exporter
+  ```
+
+  Password file (must be `chmod 600`; group/other-readable files are rejected):
 
   ```bash
   export TIMETREE_EMAIL=email@example.com
-  export TIMETREE_PASSWORD=password
+  export TIMETREE_PASSWORD_FILE=~/.config/timetree/password
   ```
+
+  `TIMETREE_PASSWORD` still works but is the least safe option.
 
 - Create separate ICS files for each label with a custom output directory.
 

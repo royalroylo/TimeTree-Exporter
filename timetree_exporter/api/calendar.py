@@ -7,6 +7,7 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 from requests.exceptions import HTTPError, Timeout
@@ -23,6 +24,33 @@ logger = logging.getLogger(__name__)
 
 PUBLIC_EVENTS_FROM = 0
 
+READ_ONLY_METHODS = frozenset({"GET", "HEAD"})
+ALLOWED_HOST_SUFFIX = "timetreeapp.com"
+
+
+class ReadOnlyViolationError(RuntimeError):
+    """Raised when code tries to send a non-read request with the TimeTree session."""
+
+
+class ReadOnlySession(requests.Session):
+    """Session that only sends GET/HEAD over HTTPS to timetreeapp.com hosts.
+
+    The exporter never writes to TimeTree; this guard makes that a hard
+    guarantee instead of a convention, and keeps the session cookie from
+    being sent to any other host.
+    """
+
+    def request(self, method, url, *args, **kwargs):  # pylint: disable=arguments-differ
+        if str(method).upper() not in READ_ONLY_METHODS:
+            raise ReadOnlyViolationError(f"Blocked non-read TimeTree request: {method}")
+        parts = urlsplit(str(url))
+        host = (parts.hostname or "").lower()
+        if parts.scheme != "https" or not (
+            host == ALLOWED_HOST_SUFFIX or host.endswith(f".{ALLOWED_HOST_SUFFIX}")
+        ):
+            raise ReadOnlyViolationError(f"Blocked request to non-TimeTree URL: {parts.scheme}://{host}")
+        return super().request(method, url, *args, **kwargs)
+
 
 class TimeTreeCalendar:
     """
@@ -30,7 +58,7 @@ class TimeTreeCalendar:
     """
 
     def __init__(self, session_id: str, capture_raw_responses: bool | None = None):
-        self.session = requests.Session()
+        self.session = ReadOnlySession()
         self.session.cookies.set("_session_id", session_id)
         self.capture_raw_responses = (
             get_raw_output_dir() is not None

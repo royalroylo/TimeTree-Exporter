@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import re
+import subprocess
 from pathlib import Path
 
 from timetree_exporter import __version__
@@ -130,8 +131,39 @@ def resolve_email(cli_email):
     return input("Enter your email address: ")
 
 
-def resolve_password():
-    """Resolve password from env var or prompt."""
+def _read_password_file(path):
+    """Read a password file, refusing files readable by group or others."""
+    file_path = Path(path).expanduser()
+    mode = file_path.stat().st_mode
+    if mode & 0o077:
+        raise PermissionError(
+            f"{file_path} must not be accessible by group/others (run: chmod 600 {file_path})"
+        )
+    return file_path.read_text(encoding="utf-8").strip()
+
+
+def _read_keychain_password(service, account):
+    """Read a password from the macOS Keychain without a shell."""
+    command = ["/usr/bin/security", "find-generic-password", "-s", service, "-w"]
+    if account:
+        command[3:3] = ["-a", account]
+    result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(f"Keychain item not found for service {service!r}")
+    return result.stdout.rstrip("\n")
+
+
+def resolve_password(email=None):
+    """Resolve password from password file, macOS Keychain, env var, or prompt.
+
+    Order: TIMETREE_PASSWORD_FILE, TIMETREE_KEYCHAIN_SERVICE, TIMETREE_PASSWORD, prompt.
+    """
+    password_file = os.environ.get("TIMETREE_PASSWORD_FILE")
+    if password_file:
+        return _read_password_file(password_file)
+    keychain_service = os.environ.get("TIMETREE_KEYCHAIN_SERVICE")
+    if keychain_service:
+        return _read_keychain_password(keychain_service, email)
     env_password = os.environ.get("TIMETREE_PASSWORD")
     if env_password:
         return env_password
